@@ -23,8 +23,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, LifecycleOwner, ActivityLifecycleCallbacks {
-
-    private var _analyzedImage: ImageProxy? = null
     private var _inferenceDelegate: Int = 1;
     private var imageAnalyzer: ImageAnalysis? = null
     private var camera: Camera? = null
@@ -42,6 +40,8 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     private lateinit var lifecycleRegistry: LifecycleRegistry;
 
     private val strBuilder: StringBuilder = StringBuilder()
+
+    private var _isDetecting: Boolean = false
 
     companion object {
         fun getInstance(receiverName: String, inferenceDelegate: Int): Any {
@@ -65,8 +65,11 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
     // Initialize CameraX, and prepare to bind the camera use cases
     private fun setUpCamera() {
+
+        Log.i("MLFL", "Setup camera")
+
         if(ContextCompat.checkSelfPermission(_context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            Log.e("MLFL", "Canera permission denied!")
+            Log.e("MLFL", "Camera permission denied!")
             return
         }
 
@@ -84,8 +87,10 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
     private fun bindCamera()
     {
+        Log.i("MLFL", "Bind camera")
+
         if(ContextCompat.checkSelfPermission(_context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            Log.e("MLFL", "Canera permission denied!")
+            Log.e("MLFL", "Camera permission denied!")
             return
         }
 
@@ -108,6 +113,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
     private fun unbindCamera()
     {
+        Log.i("MLFL", "Unbind camera")
         cameraProvider?.unbindAll()
     }
 
@@ -130,16 +136,23 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     }
 
     private fun detectFace(imageProxy: ImageProxy) {
-        Log.e("MLFL", "detectFace")
-        _analyzedImage = imageProxy
-        faceLandmarkerHelper.detectLiveStream(
-            imageProxy = imageProxy,
-            isFrontCamera = cameraFacing == CameraSelector.LENS_FACING_FRONT
-        )
+        Log.i("MLFL", "detectFace")
+
+        if(!_isDetecting)
+        {
+            _isDetecting = true
+
+            faceLandmarkerHelper.detectLiveStream(
+                imageProxy = imageProxy,
+                isFrontCamera = cameraFacing == CameraSelector.LENS_FACING_FRONT
+            )
+        }
+
         imageProxy.close()
     }
 
     fun init() {
+        Log.i("MLFL", "init")
         backgroundExecutor = Executors.newSingleThreadExecutor()
 
         initAnalyzer()
@@ -167,6 +180,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         {
             return
         }
+        Log.i("MLFL", "resume")
         _activity.runOnUiThread {
             bindCamera()
         }
@@ -177,6 +191,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         {
             return
         }
+        Log.i("MLFL", "pause")
         _activity.runOnUiThread {
             unbindCamera()
         }
@@ -196,23 +211,30 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
     override fun onError(error: String, errorCode: Int) {
         Log.e("MLFL", "($errorCode) $error")
+        _isDetecting = false;
     }
 
     override fun onResults(resultBundle: FaceLandmarkerHelper.ResultBundle)
     {
-        if( resultBundle.result.faceBlendshapes().isPresent) {
-            strBuilder.clear()
-            val list = resultBundle.result.faceBlendshapes().get()[0];
+        _isDetecting = false;
 
-            list.forEach {
-                    strBuilder.append(it.score())
-                    strBuilder.append(',')
-                    //Log.e("MLFL", it.categoryName() + " " + it.score())
-            }
+        if (!resultBundle.result.faceBlendshapes().isPresent) return
 
-            Log.e("MLFL", "Inference time: ${resultBundle.inferenceTime} ms")
-            UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLResults", strBuilder.toString())
+        strBuilder.clear()
+        val list = resultBundle.result.faceBlendshapes().get()[0];
+
+        list.forEach {
+                strBuilder.append(it.score())
+                strBuilder.append(',')
+                //Log.e("MLFL", it.categoryName() + " " + it.score())
         }
+
+        Log.i("MLFL", "Inference time: ${resultBundle.inferenceTime} ms")
+        UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLResults", strBuilder.toString())
+    }
+
+    override fun onEmpty() {
+        _isDetecting = false;
     }
 
     override fun getLifecycle(): Lifecycle {
@@ -228,22 +250,17 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     }
 
     override fun onActivityCreated(p0: Activity, p1: Bundle?) {
-        TODO("Not yet implemented")
     }
 
     override fun onActivityStarted(p0: Activity) {
-        TODO("Not yet implemented")
     }
 
     override fun onActivityStopped(p0: Activity) {
-        TODO("Not yet implemented")
     }
 
     override fun onActivitySaveInstanceState(p0: Activity, p1: Bundle) {
-        TODO("Not yet implemented")
     }
 
     override fun onActivityDestroyed(p0: Activity) {
-        TODO("Not yet implemented")
     }
 }
