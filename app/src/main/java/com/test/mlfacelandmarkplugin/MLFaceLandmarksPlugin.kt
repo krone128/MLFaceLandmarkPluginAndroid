@@ -17,7 +17,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
-import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.unity3d.player.UnityPlayer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
