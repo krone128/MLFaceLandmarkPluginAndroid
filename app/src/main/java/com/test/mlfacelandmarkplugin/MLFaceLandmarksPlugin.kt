@@ -23,20 +23,18 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, LifecycleOwner, ActivityLifecycleCallbacks {
-    private var _inferenceDelegate: Int = 1;
     private var imageAnalyzer: ImageAnalysis? = null
     private var camera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var cameraFacing = CameraSelector.LENS_FACING_FRONT
     private var unityMessageReceiverName: String = ""
 
-
     private lateinit var _context: Context;
     private lateinit var _activity: Activity
 
     /** Blocking ML operations are performed using this executor */
+    private var faceLandmarkerHelper: FaceLandmarkerHelper? = null
     private lateinit var backgroundExecutor: ExecutorService
-    private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
     private lateinit var lifecycleRegistry: LifecycleRegistry;
 
     private val strBuilder: StringBuilder = StringBuilder()
@@ -44,9 +42,9 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     private var _isDetecting: Boolean = false
 
     companion object {
-        fun getInstance(receiverName: String, inferenceDelegate: Int): Any {
+        fun getInstance(receiverName: String): Any {
             val instance = MLFaceLandmarksPlugin()
-            instance.init(receiverName, inferenceDelegate)
+            instance.init(receiverName)
             return instance
         }
     }
@@ -55,15 +53,42 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         Log.i("MLFL", "MLFaceLandmarksPlugin gets garbage collected")
     }
 
-    fun init(receiverName: String, inferenceDelegate: Int) {
-        _activity = UnityPlayer.currentActivity;
+    fun init(receiverName: String) {
+        _activity = UnityPlayer.currentActivity
         _activity.registerActivityLifecycleCallbacks(this)
-        _context = _activity.applicationContext;
+        _context = _activity.applicationContext
         unityMessageReceiverName = receiverName
-        _inferenceDelegate = inferenceDelegate;
+        backgroundExecutor = Executors.newSingleThreadExecutor()
+
+        initAnalyzer()
+
+        _activity.runOnUiThread {
+            lifecycleRegistry = LifecycleRegistry(this);
+            lifecycleRegistry.currentState = Lifecycle.State.STARTED
+            setUpCamera()
+        }
     }
 
-    // Initialize CameraX, and prepare to bind the camera use cases
+    fun setupDetector(minFaceDetectionConfidence: Float,
+                      minFaceTrackingConfidence: Float,
+                      minFacePresenceConfidence: Float,
+                      inferenceDelegate: Int)
+    {
+
+        backgroundExecutor.execute {
+            faceLandmarkerHelper?.clearFaceLandmarker();
+            faceLandmarkerHelper = FaceLandmarkerHelper(
+                context = _context,
+                maxNumFaces = 1,
+                minFaceDetectionConfidence = minFaceDetectionConfidence,
+                minFacePresenceConfidence = minFacePresenceConfidence,
+                minFaceTrackingConfidence = minFaceTrackingConfidence,
+                currentDelegate = inferenceDelegate,
+                faceLandmarkerHelperListener = this
+            )
+        }
+    }
+
     private fun setUpCamera() {
 
         Log.i("MLFL", "Setup camera")
@@ -81,7 +106,8 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
                 cameraProvider = cameraProviderFuture.get()
                 // Build and bind the camera use cases
                 bindCamera()
-            }, ContextCompat.getMainExecutor(_context)
+            },
+            ContextCompat.getMainExecutor(_context)
         )
     }
 
@@ -109,7 +135,6 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             Log.e("MLFL", "Use case binding failed", exc)
         }
     }
-
 
     private fun unbindCamera()
     {
@@ -142,7 +167,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         {
             _isDetecting = true
 
-            faceLandmarkerHelper.detectLiveStream(
+            faceLandmarkerHelper?.detectLiveStream(
                 imageProxy = imageProxy,
                 isFrontCamera = cameraFacing == CameraSelector.LENS_FACING_FRONT
             )
@@ -151,67 +176,33 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         imageProxy.close()
     }
 
-    fun init() {
-        Log.i("MLFL", "init")
-        backgroundExecutor = Executors.newSingleThreadExecutor()
-
-        initAnalyzer()
-
-        _activity.runOnUiThread {
-            lifecycleRegistry = LifecycleRegistry(this);
-            lifecycleRegistry.currentState = Lifecycle.State.STARTED
-            setUpCamera()
-        }
-
-        // Create the FaceLandmarkerHelper that will handle the inference
-        backgroundExecutor.execute {
-            faceLandmarkerHelper = FaceLandmarkerHelper(
-                context = _context,
-                runningMode = RunningMode.LIVE_STREAM,
-                maxNumFaces = 1,
-                currentDelegate = _inferenceDelegate,
-                faceLandmarkerHelperListener = this
-            )
-        }
-    }
-
     fun resume() {
-        if(cameraProvider == null)
-        {
-            return
-        }
-        Log.i("MLFL", "resume")
-        _activity.runOnUiThread {
-            bindCamera()
-        }
+        if(cameraProvider == null) return
+        _activity.runOnUiThread(::bindCamera)
     }
 
     fun pause() {
-        if(cameraProvider == null)
-        {
-            return
-        }
-        Log.i("MLFL", "pause")
-        _activity.runOnUiThread {
-            unbindCamera()
-        }
+        if(cameraProvider == null) return
+        _activity.runOnUiThread(::unbindCamera)
     }
 
     fun dispose() {
         _activity.runOnUiThread {
-            faceLandmarkerHelper.clearFaceLandmarker()
+            faceLandmarkerHelper?.clearFaceLandmarker()
+            faceLandmarkerHelper = null
             unbindCamera()
             cameraProvider = null
             camera = null
             imageAnalyzer?.clearAnalyzer()
             imageAnalyzer = null
             backgroundExecutor.shutdown()
+            _isDetecting = false
         }
     }
 
     override fun onError(error: String, errorCode: Int) {
-        Log.e("MLFL", "($errorCode) $error")
         _isDetecting = false;
+        Log.e("MLFL", "($errorCode) $error")
     }
 
     override fun onResults(resultBundle: FaceLandmarkerHelper.ResultBundle)
@@ -220,47 +211,40 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
         if (!resultBundle.result.faceBlendshapes().isPresent) return
 
+        UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLFaceFound", strBuilder.toString())
+
         strBuilder.clear()
         val list = resultBundle.result.faceBlendshapes().get()[0];
 
         list.forEach {
                 strBuilder.append(it.score())
                 strBuilder.append(',')
-                //Log.e("MLFL", it.categoryName() + " " + it.score())
         }
 
         Log.i("MLFL", "Inference time: ${resultBundle.inferenceTime} ms")
-        UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLResults", strBuilder.toString())
+        UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLBlendshapeResults", strBuilder.toString())
     }
 
     override fun onEmpty() {
         _isDetecting = false;
+        UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLFaceLost", strBuilder.toString())
     }
 
     override fun getLifecycle(): Lifecycle {
         return lifecycleRegistry;
     }
 
-    override fun onActivityResumed(p0: Activity) {
-        resume()
-    }
+    override fun onActivityResumed(p0: Activity) = resume();
 
-    override fun onActivityPaused(p0: Activity) {
-        pause()
-    }
+    override fun onActivityPaused(p0: Activity) = pause();
 
-    override fun onActivityCreated(p0: Activity, p1: Bundle?) {
-    }
+    override fun onActivityCreated(p0: Activity, p1: Bundle?) { }
 
-    override fun onActivityStarted(p0: Activity) {
-    }
+    override fun onActivityStarted(p0: Activity) { }
 
-    override fun onActivityStopped(p0: Activity) {
-    }
+    override fun onActivityStopped(p0: Activity) { }
 
-    override fun onActivitySaveInstanceState(p0: Activity, p1: Bundle) {
-    }
+    override fun onActivitySaveInstanceState(p0: Activity, p1: Bundle) { }
 
-    override fun onActivityDestroyed(p0: Activity) {
-    }
+    override fun onActivityDestroyed(p0: Activity) { }
 }
