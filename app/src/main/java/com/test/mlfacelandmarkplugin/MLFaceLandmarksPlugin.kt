@@ -1,12 +1,16 @@
 package com.test.mlfacelandmarkplugin
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application.ActivityLifecycleCallbacks
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.camera2.CaptureRequest
 import android.os.Bundle
 import android.util.Log
+import android.util.Range
+import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -52,6 +56,8 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         Log.i("MLFL", "MLFaceLandmarksPlugin gets garbage collected")
     }
 
+
+    @SuppressLint("UnsafeOptInUsageError")
     fun init(receiverName: String) {
         _activity = UnityPlayer.currentActivity
         _activity.registerActivityLifecycleCallbacks(this)
@@ -141,18 +147,25 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         cameraProvider?.unbindAll()
     }
 
+    @androidx.camera.camera2.interop.ExperimentalCamera2Interop
     private fun initAnalyzer()
     {
         val targetRotation = 0;
 
         // ImageAnalysis. Using RGBA 8888 to match how our models work
-        imageAnalyzer =
+        var config =
             ImageAnalysis.Builder()
                 .setTargetAspectRatio(AspectRatio.RATIO_4_3)
                 .setTargetRotation(targetRotation)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                .build()
+
+        Camera2Interop.Extender(config)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 30))
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 1)
+            .setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, 100)
+
+        imageAnalyzer = config.build()
                 // The analyzer can then be assigned to the instance
                 .also {
                     it.setAnalyzer(backgroundExecutor, ::detectFace)
@@ -162,15 +175,15 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     private fun detectFace(imageProxy: ImageProxy) {
         Log.i("MLFL", "detectFace")
 
-        if(!_isDetecting)
-        {
+        //if(!_isDetecting)
+        //{
             _isDetecting = true
 
             faceLandmarkerHelper?.detectLiveStream(
                 imageProxy = imageProxy,
                 isFrontCamera = cameraFacing == CameraSelector.LENS_FACING_FRONT
             )
-        }
+        //}
 
         imageProxy.close()
     }

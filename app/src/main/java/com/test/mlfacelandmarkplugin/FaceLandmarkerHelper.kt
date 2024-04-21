@@ -131,7 +131,7 @@ class FaceLandmarkerHelper(
         isFrontCamera: Boolean
     ) {
         val frameTime = SystemClock.uptimeMillis()
-        val mpImage = ByteBufferImageBuilder(imageProxy.image!!.planes[0].buffer, imageProxy.width, imageProxy.height, imageProxy.format).build();
+        val mpImage = MediaImageBuilder(imageProxy.image!!).build();
         detectAsync(mpImage, frameTime)
     }
 
@@ -158,6 +158,8 @@ class FaceLandmarkerHelper(
                     input.width
                 )
             )
+
+            input.close()
         }
         else {
             faceLandmarkerHelperListener?.onEmpty()
