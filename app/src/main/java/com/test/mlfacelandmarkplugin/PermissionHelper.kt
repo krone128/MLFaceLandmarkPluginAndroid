@@ -3,7 +3,6 @@ package com.test.mlfacelandmarkplugin
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 
 class PermissionHelper : AppCompatActivity() {
@@ -48,7 +47,7 @@ class PermissionHelper : AppCompatActivity() {
     companion object {
         private lateinit var onResultCallback: (Boolean) -> Unit
         private lateinit var permissionArray: Array<String>
-        fun RequestPermission(context: Context, permissions: Array<String>, onResult: (Boolean) -> Unit)
+        fun requestPermission(context: Context, permissions: Array<String>, onResult: (Boolean) -> Unit)
         {
             onResultCallback = onResult
             permissionArray = permissions

@@ -10,12 +10,15 @@ import android.hardware.camera2.CaptureRequest
 import android.os.Bundle
 import android.util.Log
 import android.util.Range
+import android.util.Size
 import androidx.camera.camera2.interop.Camera2Interop
-import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -25,29 +28,30 @@ import com.unity3d.player.UnityPlayer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+private const val FaceDetectorInputShapeWidth = 192
+private const val FaceDetectorInputShapeHeight = 192
+
+
 class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, LifecycleOwner, ActivityLifecycleCallbacks {
     private var imageAnalyzer: ImageAnalysis? = null
     private var camera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var cameraFacing = CameraSelector.LENS_FACING_FRONT
-    private var unityMessageReceiverName: String = ""
 
-    private lateinit var _context: Context;
+    private lateinit var _context: Context
     private lateinit var _activity: Activity
 
-    /** Blocking ML operations are performed using this executor */
     private var faceLandmarkerHelper: FaceLandmarkerHelper? = null
+    private var managedBridge : ManagedBridge? = null
     private lateinit var backgroundExecutor: ExecutorService
-    private lateinit var lifecycleRegistry: LifecycleRegistry;
-
-    private val strBuilder: StringBuilder = StringBuilder()
+    private lateinit var lifecycleRegistry: LifecycleRegistry
 
     private var _isDetecting: Boolean = false
 
     companion object {
-        fun getInstance(receiverName: String): Any {
+        fun getInstance(bridge : ManagedBridge): Any {
             val instance = MLFaceLandmarksPlugin()
-            instance.init(receiverName)
+            instance.init(bridge)
             return instance
         }
     }
@@ -58,17 +62,17 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
 
     @SuppressLint("UnsafeOptInUsageError")
-    fun init(receiverName: String) {
+    fun init(bridge: ManagedBridge) {
         _activity = UnityPlayer.currentActivity
         _activity.registerActivityLifecycleCallbacks(this)
         _context = _activity.applicationContext
-        unityMessageReceiverName = receiverName
+        managedBridge = bridge
         backgroundExecutor = Executors.newSingleThreadExecutor()
 
         initAnalyzer()
 
         _activity.runOnUiThread {
-            lifecycleRegistry = LifecycleRegistry(this);
+            lifecycleRegistry = LifecycleRegistry(this)
             lifecycleRegistry.currentState = Lifecycle.State.STARTED
             setUpCamera()
         }
@@ -81,7 +85,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     {
 
         backgroundExecutor.execute {
-            faceLandmarkerHelper?.clearFaceLandmarker();
+            faceLandmarkerHelper?.clearFaceLandmarker()
             faceLandmarkerHelper = FaceLandmarkerHelper(
                 context = _context,
                 maxNumFaces = 1,
@@ -99,7 +103,14 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         Log.i("MLFL", "Setup camera")
 
         if(ContextCompat.checkSelfPermission(_context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            Log.e("MLFL", "Camera permission denied!")
+            PermissionHelper.requestPermission(_context, Array(1){Manifest.permission.CAMERA}) { isGranted ->
+                if (!isGranted) {
+                    Log.e("MLFL", "Camera permission denied!")
+                    return@requestPermission;
+                }
+                bindCamera();
+            }
+            Log.e("MLFL", "Camera permission not granted, trying to request...")
             return
         }
 
@@ -121,7 +132,14 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         Log.i("MLFL", "Bind camera")
 
         if(ContextCompat.checkSelfPermission(_context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            Log.e("MLFL", "Camera permission denied!")
+            PermissionHelper.requestPermission(_context, Array(1){Manifest.permission.CAMERA}) { isGranted ->
+                if (!isGranted) {
+                    Log.e("MLFL", "Camera permission denied!")
+                    return@requestPermission;
+                }
+                bindCamera();
+            }
+            Log.e("MLFL", "Camera permission is not granted, trying to request...")
             return
         }
 
@@ -150,20 +168,26 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     @androidx.camera.camera2.interop.ExperimentalCamera2Interop
     private fun initAnalyzer()
     {
-        val targetRotation = 0;
+        val targetRotation = 0
+
+        val resSelector = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+            .setResolutionStrategy(ResolutionStrategy(Size(FaceDetectorInputShapeWidth, FaceDetectorInputShapeHeight),
+                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER))
+            .build()
 
         // ImageAnalysis. Using RGBA 8888 to match how our models work
-        var config =
+        val config =
             ImageAnalysis.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                .setResolutionSelector(resSelector)
                 .setTargetRotation(targetRotation)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
 
         Camera2Interop.Extender(config)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 30))
-            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, 1)
-            .setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, 100)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 60))
+            .setCaptureRequestOption(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_USE_SCENE_MODE)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_FACE_PRIORITY)
 
         imageAnalyzer = config.build()
                 // The analyzer can then be assigned to the instance
@@ -172,20 +196,24 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
                 }
     }
 
+    var imProxy : ImageProxy? = null
+
     private fun detectFace(imageProxy: ImageProxy) {
         Log.i("MLFL", "detectFace")
 
-        //if(!_isDetecting)
-        //{
-            _isDetecting = true
+         if(_isDetecting)
+        {
+            Log.i("MLFL", "detectFace Already detecting")
+        }
 
-            faceLandmarkerHelper?.detectLiveStream(
-                imageProxy = imageProxy,
-                isFrontCamera = cameraFacing == CameraSelector.LENS_FACING_FRONT
-            )
-        //}
+        imProxy = imageProxy
 
-        imageProxy.close()
+        _isDetecting = true
+
+        faceLandmarkerHelper?.detectLiveStream(
+            imageProxy = imageProxy,
+            isFrontCamera = cameraFacing == CameraSelector.LENS_FACING_FRONT
+        )
     }
 
     fun resume() {
@@ -213,42 +241,47 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     }
 
     override fun onError(error: String, errorCode: Int) {
-        _isDetecting = false;
+
+        imProxy?.close()
+        _isDetecting = false
         Log.e("MLFL", "($errorCode) $error")
+        _activity.runOnUiThread { managedBridge?.faceDetectionError(error) }
     }
+
+    val floatBuffer : FloatArray =  FloatArray(53) {0f}
 
     override fun onResults(resultBundle: FaceLandmarkerHelper.ResultBundle)
     {
-        _isDetecting = false;
+        imProxy?.close()
+        _isDetecting = false
 
         if (!resultBundle.result.faceBlendshapes().isPresent) return
 
-        UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLFaceFound", strBuilder.toString())
+        val list = resultBundle.result.faceBlendshapes().get()[0]
 
-        strBuilder.clear()
-        val list = resultBundle.result.faceBlendshapes().get()[0];
+        var i = 0
 
         list.forEach {
-                strBuilder.append(it.score())
-                strBuilder.append(',')
+            floatBuffer[i++] = it.score()
         }
 
         Log.i("MLFL", "Inference time: ${resultBundle.inferenceTime} ms")
-        UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLBlendshapeResults", strBuilder.toString())
+
+        _activity.runOnUiThread { managedBridge?.faceDetectionResult(floatBuffer, resultBundle.inferenceTime) }
     }
 
     override fun onEmpty() {
-        _isDetecting = false;
-        UnityPlayer.UnitySendMessage(unityMessageReceiverName, "MLFLFaceLost", strBuilder.toString())
+        imProxy?.close()
+        _isDetecting = false
+        _activity.runOnUiThread {  managedBridge?.faceLost() }
     }
 
-    override fun getLifecycle(): Lifecycle {
-        return lifecycleRegistry;
-    }
+    override val lifecycle: Lifecycle
+        get() = lifecycleRegistry
 
-    override fun onActivityResumed(p0: Activity) = resume();
+    override fun onActivityResumed(p0: Activity) = resume()
 
-    override fun onActivityPaused(p0: Activity) = pause();
+    override fun onActivityPaused(p0: Activity) = pause()
 
     override fun onActivityCreated(p0: Activity, p1: Bundle?) { }
 

@@ -17,18 +17,11 @@ package com.test.mlfacelandmarkplugin
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Matrix
-import android.media.MediaMetadataRetriever
-import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.camera.core.ImageProxy
-import com.google.mediapipe.framework.image.BitmapImageBuilder
-import com.google.mediapipe.framework.image.ByteBufferImageBuilder
 import com.google.mediapipe.framework.image.MPImage
-import com.google.mediapipe.framework.image.MPImageProducer
 import com.google.mediapipe.framework.image.MediaImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
@@ -131,7 +124,7 @@ class FaceLandmarkerHelper(
         isFrontCamera: Boolean
     ) {
         val frameTime = SystemClock.uptimeMillis()
-        val mpImage = MediaImageBuilder(imageProxy.image!!).build();
+        val mpImage = MediaImageBuilder(imageProxy.image!!).build()
         detectAsync(mpImage, frameTime)
     }
 
@@ -146,7 +139,7 @@ class FaceLandmarkerHelper(
         result: FaceLandmarkerResult,
         input: MPImage
     ) {
-        if( result.faceLandmarks().size > 0 ) {
+        if( result.faceBlendshapes().isPresent) {
             val finishTimeMs = SystemClock.uptimeMillis()
             val inferenceTime = finishTimeMs - result.timestampMs()
 

@@ -6,11 +6,10 @@ plugins {
 
 android {
     namespace = "com.test.mlfacelandmarkplugin"
-    compileSdk = 33
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 29
-        targetSdk = 33
     }
 
     buildTypes {
@@ -23,12 +22,13 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
     }
+    buildToolsVersion = "35.0.0"
 }
 
 // import DownloadMPTasks task
@@ -38,19 +38,19 @@ apply("download_tasks.gradle")
 
 dependencies {
 
-    implementation("androidx.core:core-ktx:1.8.0")
-    implementation("androidx.appcompat:appcompat:1.5.0")
-    implementation("com.google.android.material:material:1.7.0")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
     compileOnly(fileTree(mapOf(
-        "dir" to "I:\\Unity Installs\\2019.4.23f1\\Editor\\Data\\PlaybackEngines\\AndroidPlayer\\Variations\\il2cpp\\Release\\Classes",
+        "dir" to "/Applications/Unity/Hub/Editor/2022.3.28f1/PlaybackEngines/AndroidPlayer/Variations/il2cpp/Release/Classes",
         "include" to listOf("*.aar", "*.jar")
     )))
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 
     // CameraX core library
-    val camerax_version = "1.2.0"
+    val camerax_version = "1.3.4"
     implementation("androidx.camera:camera-core:$camerax_version")
 
     // CameraX Camera2 extensions
@@ -63,5 +63,5 @@ dependencies {
     implementation("androidx.camera:camera-view:$camerax_version")
 
     // MediaPipe Library
-    implementation("com.google.mediapipe:tasks-vision:0.10.10")
+    implementation("com.google.mediapipe:tasks-vision:latest.release")
 }
