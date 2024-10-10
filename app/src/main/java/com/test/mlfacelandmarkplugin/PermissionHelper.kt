@@ -1,11 +1,11 @@
 package com.test.mlfacelandmarkplugin
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import androidx.appcompat.app.AppCompatActivity
 
-class PermissionHelper : AppCompatActivity() {
+class PermissionHelper : Activity() {
     private val pCode = 12321
 
     override fun onResume() {

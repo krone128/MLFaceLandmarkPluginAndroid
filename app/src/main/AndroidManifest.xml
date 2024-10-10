@@ -5,7 +5,7 @@
     <application>
         <activity android:name="com.test.mlfacelandmarkplugin.PermissionHelper"
             android:exported="true">
-            <meta-data android:name="mlfacelandmarkplugin.PermissionHelper" android:value="true" android:theme="@style/Theme.AppCompat.Light.DarkActionBar"/>
+            <meta-data android:name="mlfacelandmarkplugin.PermissionHelper" android:value="true" android:theme="@style/Theme.Transparent"/>
         </activity>
     </application>
 </manifest>

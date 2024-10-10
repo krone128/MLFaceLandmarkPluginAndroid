@@ -24,15 +24,14 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
-import com.unity3d.player.UnityPlayer
+import com.github.florent37.application.provider.ActivityProvider
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-private const val FaceDetectorInputShapeWidth = 192
-private const val FaceDetectorInputShapeHeight = 192
-
-
 class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, LifecycleOwner, ActivityLifecycleCallbacks {
+    private val FaceDetectorInputShapeWidth = 640
+    private val FaceDetectorInputShapeHeight = 480
+
     private var imageAnalyzer: ImageAnalysis? = null
     private var camera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
@@ -63,7 +62,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
     @SuppressLint("UnsafeOptInUsageError")
     fun init(bridge: ManagedBridge) {
-        _activity = UnityPlayer.currentActivity
+        _activity = ActivityProvider.currentActivity!!
         _activity.registerActivityLifecycleCallbacks(this)
         _context = _activity.applicationContext
         managedBridge = bridge
@@ -106,9 +105,9 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             PermissionHelper.requestPermission(_context, Array(1){Manifest.permission.CAMERA}) { isGranted ->
                 if (!isGranted) {
                     Log.e("MLFL", "Camera permission denied!")
-                    return@requestPermission;
+                    return@requestPermission
                 }
-                bindCamera();
+                setUpCamera()
             }
             Log.e("MLFL", "Camera permission not granted, trying to request...")
             return
@@ -135,15 +134,15 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             PermissionHelper.requestPermission(_context, Array(1){Manifest.permission.CAMERA}) { isGranted ->
                 if (!isGranted) {
                     Log.e("MLFL", "Camera permission denied!")
-                    return@requestPermission;
+                    return@requestPermission
                 }
-                bindCamera();
+                bindCamera()
             }
             Log.e("MLFL", "Camera permission is not granted, trying to request...")
             return
         }
 
-        cameraProvider ?: throw IllegalStateException("Camera initialization failed.")
+        cameraProvider ?: { Log.e("MLFL", "Attempt to bind camera while cameraProvider is not initialized") }
         val cameraSelector = CameraSelector.Builder().requireLensFacing(cameraFacing).build()
         try {
             // Must unbind the use-cases before rebinding them
@@ -186,8 +185,12 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
         Camera2Interop.Extender(config)
             .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 60))
-            .setCaptureRequestOption(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_USE_SCENE_MODE)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_FACE_PRIORITY)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_MOTION_TRACKING)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
 
         imageAnalyzer = config.build()
                 // The analyzer can then be assigned to the instance
@@ -199,9 +202,10 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     var imProxy : ImageProxy? = null
 
     private fun detectFace(imageProxy: ImageProxy) {
-        Log.i("MLFL", "detectFace")
 
-         if(_isDetecting)
+        Log.i("MLFL", "captured size ${imageProxy.width}x${imageProxy.height}")
+
+        if(_isDetecting)
         {
             Log.i("MLFL", "detectFace Already detecting")
         }
@@ -265,15 +269,13 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             floatBuffer[i++] = it.score()
         }
 
-        Log.i("MLFL", "Inference time: ${resultBundle.inferenceTime} ms")
-
-        _activity.runOnUiThread { managedBridge?.faceDetectionResult(floatBuffer, resultBundle.inferenceTime) }
+        managedBridge?.faceDetectionResult(floatBuffer, resultBundle.inferenceTime)
     }
 
     override fun onEmpty() {
         imProxy?.close()
         _isDetecting = false
-        _activity.runOnUiThread {  managedBridge?.faceLost() }
+        managedBridge?.faceLost()
     }
 
     override val lifecycle: Lifecycle

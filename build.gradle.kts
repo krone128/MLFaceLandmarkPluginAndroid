@@ -4,3 +4,12 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.1.0-Beta1" apply false
     id("de.undercouch.download") version "5.6.0" apply false
 }
+
+repositories {
+    allprojects {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+        maven("https://jitpack.io")
+    }
+}

@@ -36,16 +36,20 @@ android {
 project.ext.set("ASSET_DIR", "$projectDir/src/main/assets")
 apply("download_tasks.gradle")
 
-dependencies {
+repositories {
+    allprojects {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+        maven("https://jitpack.io")
+    }
+}
 
+dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
-    compileOnly(fileTree(mapOf(
-        "dir" to "/Applications/Unity/Hub/Editor/2022.3.28f1/PlaybackEngines/AndroidPlayer/Variations/il2cpp/Release/Classes",
-        "include" to listOf("*.aar", "*.jar")
-    )))
-    testImplementation("junit:junit:4.13.2")
+    implementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 
@@ -64,4 +68,6 @@ dependencies {
 
     // MediaPipe Library
     implementation("com.google.mediapipe:tasks-vision:latest.release")
+
+    compileOnly(fileTree("libs") { include("*.jar", "*.aar") })
 }
