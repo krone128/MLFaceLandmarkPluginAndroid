@@ -120,8 +120,7 @@ class FaceLandmarkerHelper(
     // Convert the ImageProxy to MP Image and feed it to FacelandmakerHelper.
     @SuppressLint("UnsafeOptInUsageError")
     fun detectLiveStream(
-        imageProxy: ImageProxy,
-        isFrontCamera: Boolean
+        imageProxy: ImageProxy
     ) {
         val frameTime = SystemClock.uptimeMillis()
         val mpImage = MediaImageBuilder(imageProxy.image!!).build()
