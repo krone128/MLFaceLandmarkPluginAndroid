@@ -56,8 +56,8 @@ class PermissionHelper : Activity() {
         }
 
         private fun checkPermissions() {
-            val callback = arguments.getParcelable<PermissionResultCallback>("callback")
             val permissionArray = arguments.getStringArray("permissions");
+            val callback = arguments.getParcelable<PermissionResultCallback>("callback")
 
             if(permissionArray.isNullOrEmpty()) {
                 callback?.onResult?.invoke(true)
@@ -108,6 +108,9 @@ class PermissionHelper : Activity() {
         private lateinit var permissionArray: Array<String>
         fun requestPermission(activity: Activity, permissions: Array<String>, onResult: (Boolean) -> Unit)
         {
+            requestPermissionFragment(activity, permissions, onResult)
+            return
+
             onResultCallback = onResult
             permissionArray = permissions
 
@@ -124,7 +127,7 @@ class PermissionHelper : Activity() {
                 putParcelable("callback", PermissionResultCallback(onResult))
             }
             activity.fragmentManager.beginTransaction()
-                .add(0, PermissionHelperFragment(), fragmentTag)
+                .add(0, frag, fragmentTag)
                 .commitNowAllowingStateLoss()
         }
     }
