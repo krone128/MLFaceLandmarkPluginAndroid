@@ -2,10 +2,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <application>
-        <activity android:name="com.test.mlfacelandmarkplugin.PermissionHelper"
-            android:exported="true">
-            <meta-data android:name="mlfacelandmarkplugin.PermissionHelper" android:value="true" android:theme="@style/Theme.Transparent"/>
-        </activity>
-    </application>
+    <application/>
 </manifest>
