@@ -30,14 +30,16 @@ import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 
 class FaceLandmarkerHelper(
-    var minFaceDetectionConfidence: Float = DEFAULT_FACE_DETECTION_CONFIDENCE,
-    var minFaceTrackingConfidence: Float = DEFAULT_FACE_TRACKING_CONFIDENCE,
-    var minFacePresenceConfidence: Float = DEFAULT_FACE_PRESENCE_CONFIDENCE,
-    var maxNumFaces: Int = DEFAULT_NUM_FACES,
-    var currentDelegate: Int = DELEGATE_CPU,
+    val minFaceDetectionConfidence: Float = DEFAULT_FACE_DETECTION_CONFIDENCE,
+    val minFaceTrackingConfidence: Float = DEFAULT_FACE_TRACKING_CONFIDENCE,
+    val minFacePresenceConfidence: Float = DEFAULT_FACE_PRESENCE_CONFIDENCE,
+    val maxNumFaces: Int = DEFAULT_NUM_FACES,
+    val currentDelegate: Int = DELEGATE_CPU,
+    val outputBlendshapes: Boolean,
+    val outputTransformationMatrices: Boolean,
     val context: Context,
     // this listener is only used when running in RunningMode.LIVE_STREAM
-    val faceLandmarkerHelperListener: LandmarkerListener? = null
+    val faceLandmarkerHelperListener: LandmarkerListener? = null,
 ) {
 
     // For this example this needs to be a var so it can be reset on changes.
@@ -88,7 +90,8 @@ class FaceLandmarkerHelper(
                     .setMinTrackingConfidence(minFaceTrackingConfidence)
                     .setMinFacePresenceConfidence(minFacePresenceConfidence)
                     .setNumFaces(maxNumFaces)
-                    .setOutputFaceBlendshapes(true)
+                    .setOutputFacialTransformationMatrixes(outputTransformationMatrices)
+                    .setOutputFaceBlendshapes(outputBlendshapes)
                     .setRunningMode(RunningMode.LIVE_STREAM)
                     .setResultListener(this::returnLivestreamResult)
                     .setErrorListener(this::returnLivestreamError)

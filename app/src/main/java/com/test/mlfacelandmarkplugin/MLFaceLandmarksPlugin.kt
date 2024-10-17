@@ -26,14 +26,16 @@ import androidx.lifecycle.LifecycleRegistry
 import com.github.florent37.application.provider.ActivityProvider
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.jvm.optionals.getOrDefault
 
 class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, LifecycleOwner, ActivityLifecycleCallbacks {
+    private val landmarkFloatElementsSize = 5
     private val faceDetectorInputShapeWidth = 640
     private val faceDetectorInputShapeHeight = 480
 
-    private val BlendshapesCount = 53
-
-    private val blendshapesBuffer : FloatArray =  FloatArray(BlendshapesCount) {0f}
+    private var blendshapesBuffer : FloatArray? = null
+    private var landmarksBuffer : FloatArray? = null
+    private var transformationMatricesBuffer : FloatArray? = null
 
     private var faceLandmarkerHelper: FaceLandmarkerHelper? = null
     private var managedBridge : ManagedBridge? = null
@@ -49,6 +51,11 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     private lateinit var lifecycleRegistry: LifecycleRegistry
 
     private var _isDetecting: Boolean = false
+
+    private var maxFacesDetectedCount : Int = 1
+    private var outputLandmarks : Boolean = false
+    private var outputBlendshapes : Boolean = false;
+    private var outputTransformMatrices : Boolean = false;
 
     companion object {
         fun getInstance(bridge : ManagedBridge): Any {
@@ -76,17 +83,29 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         }
     }
 
-    fun setupDetector(minFaceDetectionConfidence: Float,
-                      minFaceTrackingConfidence: Float,
-                      minFacePresenceConfidence: Float,
-                      inferenceDelegate: Int)
+    fun setupDetector(
+        facesCount: Int,
+        outputLandmarks : Boolean,
+        outputBlendshapes : Boolean,
+        outputTransformationMatrices: Boolean,
+        minFaceDetectionConfidence: Float,
+        minFaceTrackingConfidence: Float,
+        minFacePresenceConfidence: Float,
+        inferenceDelegate: Int)
     {
+
+        maxFacesDetectedCount = facesCount
+        this.outputLandmarks = outputLandmarks
+        this.outputBlendshapes = outputBlendshapes
+        this.outputTransformMatrices = outputTransformationMatrices
 
         backgroundExecutor.execute {
             faceLandmarkerHelper?.clearFaceLandmarker()
             faceLandmarkerHelper = FaceLandmarkerHelper(
                 context = _context,
-                maxNumFaces = 1,
+                maxNumFaces = facesCount,
+                outputBlendshapes = outputBlendshapes,
+                outputTransformationMatrices = outputTransformationMatrices,
                 minFaceDetectionConfidence = minFaceDetectionConfidence,
                 minFacePresenceConfidence = minFacePresenceConfidence,
                 minFaceTrackingConfidence = minFaceTrackingConfidence,
@@ -171,7 +190,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
                 }
                 bindCamera()
             }
-            Log.e("MLFL", "Camera permission is not granted, trying to request...")
+            Log.i("MLFL", "Camera permission is not granted, trying to request...")
             return
         }
 
@@ -231,10 +250,8 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     }
 
     override fun onError(error: String, errorCode: Int) {
-
         analyzedImage?.close()
         _isDetecting = false
-        Log.e("MLFL", "($errorCode) $error")
         _activity.runOnUiThread { managedBridge?.faceDetectionError(error) }
     }
 
@@ -243,23 +260,88 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         analyzedImage?.close()
         _isDetecting = false
 
-        if (!resultBundle.result.faceBlendshapes().isPresent) return
+        var blendshapeArrayLength = 0;
+        var landmarkArrayLength = 0;
+        var transformMatrixArrayLength = 0;
 
-        val list = resultBundle.result.faceBlendshapes().get()[0]
+        val numFaces = resultBundle.result.faceLandmarks().size
 
-        var i = 0
+        if(numFaces == 0)
+            managedBridge?.faceDetectionResult(numFaces,
+                0,
+                0,
+                0,
+                null,
+                null,
+                null,
+                resultBundle.inferenceTime).also { return }
 
-        list.forEach {
-            blendshapesBuffer[i++] = it.score()
+        if(outputLandmarks)
+        {
+            var i = 0;
+            val faceLandmarks = resultBundle.result.faceLandmarks()
+            landmarkArrayLength = faceLandmarks[0].size
+
+            val bufferSize = maxFacesDetectedCount * landmarkArrayLength * landmarkFloatElementsSize
+            if (landmarksBuffer?.size != bufferSize) landmarksBuffer = FloatArray(bufferSize)
+
+            landmarksBuffer?.also { buffer ->
+                faceLandmarks.forEach { landmarkList ->
+                    landmarkList.forEach { landmark ->
+                        buffer[i++] = landmark.x()
+                        buffer[i++] = landmark.y()
+                        buffer[i++] = landmark.z()
+                        buffer[i++] = landmark.presence().getOrDefault(0f)
+                        buffer[i++] = landmark.visibility().getOrDefault(0f)
+                    }
+                }
+            }
         }
 
-        managedBridge?.faceDetectionResult(blendshapesBuffer, resultBundle.inferenceTime)
+        if (outputBlendshapes && resultBundle.result.faceBlendshapes().isPresent) {
+            var i = 0;
+            val faceBlendshapes = resultBundle.result.faceBlendshapes().get()
+            blendshapeArrayLength = faceBlendshapes[0].size
+
+            val bufferSize = maxFacesDetectedCount * blendshapeArrayLength
+            if (blendshapesBuffer?.size != bufferSize) blendshapesBuffer = FloatArray(bufferSize)
+
+            faceBlendshapes.forEach { blendshapeList ->
+                blendshapeList.forEach { blendshape ->
+                    blendshapesBuffer!![i++] = blendshape.score()
+                }
+            }
+        }
+
+        if (outputTransformMatrices && resultBundle.result.facialTransformationMatrixes().isPresent) {
+            var i = 0;
+            val matrices = resultBundle.result.facialTransformationMatrixes().get()
+            transformMatrixArrayLength = matrices[0].size
+
+            val bufferSize = transformMatrixArrayLength * maxFacesDetectedCount
+            if (transformationMatricesBuffer?.size != bufferSize) transformationMatricesBuffer =
+                FloatArray(bufferSize)
+
+            matrices.forEach { matrix ->
+                matrix.forEach { matrixElement ->
+                    transformationMatricesBuffer!![i++] = matrixElement
+                }
+            }
+        }
+
+        managedBridge?.faceDetectionResult(numFaces,
+            landmarkArrayLength,
+            blendshapeArrayLength,
+            transformMatrixArrayLength,
+            landmarksBuffer,
+            blendshapesBuffer,
+            transformationMatricesBuffer,
+            resultBundle.inferenceTime)
     }
 
     override fun onEmpty() {
         analyzedImage?.close()
         _isDetecting = false
-        managedBridge?.faceLost()
     }
 
     override val lifecycle: Lifecycle
