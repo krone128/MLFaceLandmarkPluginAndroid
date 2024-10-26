@@ -141,24 +141,24 @@ class FaceLandmarkerHelper(
         result: FaceLandmarkerResult,
         input: MPImage
     ) {
-        if( result.faceBlendshapes().isPresent) {
-            val finishTimeMs = SystemClock.uptimeMillis()
-            val inferenceTime = finishTimeMs - result.timestampMs()
-
-            faceLandmarkerHelperListener?.onResults(
-                ResultBundle(
-                    result,
-                    inferenceTime,
-                    input.height,
-                    input.width
-                )
-            )
-
-            input.close()
-        }
-        else {
+        if( result.faceLandmarks().size == 0) {
             faceLandmarkerHelperListener?.onEmpty()
+            return
         }
+
+        val finishTimeMs = SystemClock.uptimeMillis()
+        val inferenceTime = finishTimeMs - result.timestampMs()
+
+        faceLandmarkerHelperListener?.onResults(
+            ResultBundle(
+                result,
+                inferenceTime,
+                input.height,
+                input.width
+            )
+        )
+
+        input.close()
     }
 
     // Return errors thrown during detection to this FaceLandmarkerHelper's
