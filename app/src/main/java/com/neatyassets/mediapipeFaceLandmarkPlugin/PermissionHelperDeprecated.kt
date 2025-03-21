@@ -1,4 +1,4 @@
-package com.test.mlfacelandmarkplugin
+package com.neatyassets.mediapipeFaceLandmarkPlugin
 
 import android.app.Activity
 import android.content.pm.PackageManager

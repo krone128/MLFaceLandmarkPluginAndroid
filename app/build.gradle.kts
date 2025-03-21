@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.test.mlfacelandmarkplugin"
+    namespace = "com.neatyassets.mediapipeFaceLandmarkPlugin"
     compileSdk = 35
 
     defaultConfig {
@@ -69,6 +69,8 @@ dependencies {
 
     // MediaPipe Library
     implementation("com.google.mediapipe:tasks-vision:latest.release")
+
+    implementation("com.google.mediapipe:tasks-core:latest.release")
 
     compileOnly(fileTree("libs") { include("*.jar", "*.aar") })
 }

@@ -1,4 +1,4 @@
-package com.test.mlfacelandmarkplugin
+package com.neatyassets.mediapipeFaceLandmarkPlugin
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -6,11 +6,12 @@ import android.app.Activity
 import android.app.Application.ActivityLifecycleCallbacks
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.hardware.camera2.CaptureRequest
 import android.os.Bundle
 import android.util.Log
-import android.util.Range
 import android.util.Size
+import android.view.Surface
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -24,6 +25,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import com.github.florent37.application.provider.ActivityProvider
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.lang.reflect.Field
 import java.nio.Buffer
 import java.nio.ByteBuffer
@@ -39,8 +43,8 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     private var transformationMatricesBufferAddress: Long = 0
     private val FLOAT_SIZE: Int = 4
     private val landmarkFloatElementsSize = 5
-    private val faceDetectorInputShapeWidth = 640
-    private val faceDetectorInputShapeHeight = 480
+    private val faceDetectorInputShapeWidth = 480
+    private val faceDetectorInputShapeHeight = 640
 
     private val landmarkArrayLength = 478;
     private val blendshapeArrayLength = 52;
@@ -136,7 +140,9 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         Log.i("MLFL", "Setup camera")
 
         if(ContextCompat.checkSelfPermission(_context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            PermissionHelper.requestPermission(_activity, Array(1){Manifest.permission.CAMERA}) { isGranted ->
+            PermissionHelper.requestPermission(
+                _activity,
+                Array(1) { Manifest.permission.CAMERA }) { isGranted ->
                 if (!isGranted) {
                     Log.e("MLFL", "Camera permission denied!")
                     return@requestPermission
@@ -155,8 +161,6 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             {
                 // CameraProvider
                 cameraProvider = cameraProviderFuture.get()
-                // Build and bind the camera use cases
-                bindCamera()
             },
             ContextCompat.getMainExecutor(_context)
         )
@@ -165,7 +169,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     @androidx.camera.camera2.interop.ExperimentalCamera2Interop
     private fun initAnalyzer()
     {
-        val targetRotation = 0
+        val targetRotation = Surface.ROTATION_90
 
         val resSelector = ResolutionSelector.Builder()
             .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
@@ -181,13 +185,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
 
         Camera2Interop.Extender(config)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 60))
-            .setCaptureRequestOption(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_MOTION_TRACKING)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_VIDEO_SNAPSHOT)
 
         imageAnalysis = config.build()
             .also { it.setAnalyzer(backgroundExecutor, ::detectFace) }
@@ -198,7 +196,9 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         Log.i("MLFL", "Bind camera")
 
         if(ContextCompat.checkSelfPermission(_context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            PermissionHelper.requestPermission(_activity, Array(1){Manifest.permission.CAMERA}) { isGranted ->
+            PermissionHelper.requestPermission(
+                _activity,
+                Array(1) { Manifest.permission.CAMERA }) { isGranted ->
                 if (!isGranted) {
                     Log.e("MLFL", "Camera permission denied!")
                     return@requestPermission
@@ -229,7 +229,52 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         cameraProvider?.unbindAll()
     }
 
+    var dumped : Boolean = false
+
+    fun saveBitmapToInternalStorage(
+        context: Context,
+        bitmap: Bitmap,
+        fileName: String,
+        directoryName: String = "images",
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG,
+        quality: Int = 100
+    ): Boolean {
+        // Get the directory for the app's internal storage.
+        val directory = context.getDir(directoryName, Context.MODE_PRIVATE)
+
+        // Create the directory if it doesn't exist.
+        if (!directory.exists()) {
+            directory.mkdir()
+        }
+
+        // Create the file.
+        val file = File(directory, fileName)
+
+        var fos: FileOutputStream? = null
+        try {
+            fos = FileOutputStream(file)
+            // Compress the bitmap and write it to the file.
+            bitmap.compress(format, quality, fos)
+            Log.i("MLFL", "Pic saved to:\n ${file.absolutePath}")
+            return true
+        } catch (e: IOException) {
+            Log.e("saveBitmapToInternalStorage", "Error saving bitmap", e)
+            return false
+        } finally {
+            // Close the file output stream.
+            fos?.close()
+        }
+    }
+
     private fun detectFace(imageProxy: ImageProxy) {
+
+        if(!dumped)
+        {
+            dumped = true
+
+            saveBitmapToInternalStorage(_context, imageProxy.toBitmap(), "test.jpg")
+        }
+
         if(_isDetecting)
         {
             Log.i("MLFL", "detectFace Already detecting")
@@ -252,14 +297,13 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     }
 
     fun dispose() {
-        _activity.runOnUiThread {
+        backgroundExecutor.execute {
             faceLandmarkerHelper?.clearFaceLandmarker()
             faceLandmarkerHelper = null
             unbindCamera()
             cameraProvider = null
             imageAnalysis?.clearAnalyzer()
             imageAnalysis = null
-            backgroundExecutor.shutdown()
             _isDetecting = false
         }
     }
@@ -268,7 +312,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     fun initBuffers()
     {
         val address: Field = Buffer::class.java.getDeclaredField("address")
-        address.setAccessible(true)
+        address.isAccessible = true
 
         landmarksBuffer = ByteBuffer
             .allocateDirect(maxFacesDetectedCount * landmarkArrayLength * landmarkFloatElementsSize * FLOAT_SIZE)
@@ -282,6 +326,14 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         landmarksBufferAddress = address.getLong(landmarksBuffer)
         blendshapesBufferAddress = address.getLong(blendshapesBuffer)
         transformationMatricesBufferAddress = address.getLong(transformationMatricesBuffer)
+
+        managedBridge?.faceDetectionSetup(maxFacesDetectedCount,
+            landmarkArrayLength,
+            landmarksBufferAddress,
+            blendshapeArrayLength,
+            blendshapesBufferAddress,
+            matrixArrayLength,
+            transformationMatricesBufferAddress,)
     }
 
     override fun onError(error: String, errorCode: Int) {
@@ -338,12 +390,6 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         }
 
         managedBridge?.faceDetectionResult(numFaces,
-            landmarkArrayLength,
-            landmarksBufferAddress,
-            blendshapeArrayLength,
-            blendshapesBufferAddress,
-            matrixArrayLength,
-            transformationMatricesBufferAddress,
             resultBundle.inferenceTime)
     }
 
