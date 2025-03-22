@@ -25,6 +25,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import com.github.florent37.application.provider.ActivityProvider
+import com.google.common.util.concurrent.ListenableFuture
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -37,32 +38,34 @@ import java.util.concurrent.Executors
 import kotlin.jvm.optionals.getOrDefault
 
 
+private const val TAG = "MediaPipeFaceLandmarkPlugin"
+
 class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, LifecycleOwner, ActivityLifecycleCallbacks {
     private var landmarksBufferAddress: Long = 0
     private var blendshapesBufferAddress: Long = 0
     private var transformationMatricesBufferAddress: Long = 0
-    private val FLOAT_SIZE: Int = 4
     private val landmarkFloatElementsSize = 5
     private val faceDetectorInputShapeWidth = 480
     private val faceDetectorInputShapeHeight = 640
 
-    private val landmarkArrayLength = 478;
-    private val blendshapeArrayLength = 52;
-    private val matrixArrayLength = 16;
+    private val landmarkArrayLength = 478
+    private val blendshapeArrayLength = 52
+    private val matrixArrayLength = 16
 
-    private lateinit var blendshapesBuffer : ByteBuffer
-    private lateinit var landmarksBuffer : ByteBuffer
-    private lateinit var transformationMatricesBuffer : ByteBuffer
+    private var blendshapesBuffer : ByteBuffer? = null
+    private var landmarksBuffer : ByteBuffer? = null
+    private var transformationMatricesBuffer : ByteBuffer? = null
 
     private var faceLandmarkerHelper: FaceLandmarkerHelper? = null
     private var managedBridge : ManagedBridge? = null
 
     private var imageAnalysis: ImageAnalysis? = null
-    private var cameraProvider: ProcessCameraProvider? = null
+    //private var cameraProvider: ProcessCameraProvider? = null
     private var analyzedImage : ImageProxy? = null
 
     private lateinit var _context: Context
     private lateinit var _activity: Activity
+    private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
 
     private lateinit var backgroundExecutor: ExecutorService
     private lateinit var lifecycleRegistry: LifecycleRegistry
@@ -71,8 +74,8 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
     private var maxFacesDetectedCount : Int = 1
     private var outputLandmarks : Boolean = false
-    private var outputBlendshapes : Boolean = false;
-    private var outputTransformMatrices : Boolean = false;
+    private var outputBlendshapes : Boolean = false
+    private var outputTransformMatrices : Boolean = false
 
     companion object {
         fun getInstance(bridge : ManagedBridge): Any {
@@ -83,7 +86,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     }
 
     protected fun finalize() {
-        Log.i("MLFL", "MLFaceLandmarksPlugin gets garbage collected")
+        Log.i(TAG, "MLFaceLandmarksPlugin gets garbage collected")
     }
 
     fun init(bridge: ManagedBridge) {
@@ -92,6 +95,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         _context = _activity.applicationContext
         managedBridge = bridge
         backgroundExecutor = Executors.newSingleThreadExecutor()
+        cameraProviderFuture = ProcessCameraProvider.getInstance(_context)
 
         _activity.runOnUiThread {
             lifecycleRegistry = LifecycleRegistry(this)
@@ -131,39 +135,29 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             )
         }
 
-        initBuffers();
+        initBuffers()
     }
 
     @SuppressLint("UnsafeOptInUsageError")
     private fun setUpCamera() {
 
-        Log.i("MLFL", "Setup camera")
+        Log.i(TAG, "Setup camera")
 
         if(ContextCompat.checkSelfPermission(_context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             PermissionHelper.requestPermission(
                 _activity,
                 Array(1) { Manifest.permission.CAMERA }) { isGranted ->
                 if (!isGranted) {
-                    Log.e("MLFL", "Camera permission denied!")
+                    Log.e(TAG, "Camera permission denied!")
                     return@requestPermission
                 }
                 setUpCamera()
             }
-            Log.e("MLFL", "Camera permission not granted, trying to request...")
+            Log.e(TAG, "Camera permission not granted, trying to request...")
             return
         }
 
         initAnalyzer()
-
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(_context)
-
-        cameraProviderFuture.addListener(
-            {
-                // CameraProvider
-                cameraProvider = cameraProviderFuture.get()
-            },
-            ContextCompat.getMainExecutor(_context)
-        )
     }
 
     @androidx.camera.camera2.interop.ExperimentalCamera2Interop
@@ -193,23 +187,25 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
     private fun bindCamera()
     {
-        Log.i("MLFL", "Bind camera")
+        Log.i(TAG, "Bind camera")
 
         if(ContextCompat.checkSelfPermission(_context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             PermissionHelper.requestPermission(
                 _activity,
                 Array(1) { Manifest.permission.CAMERA }) { isGranted ->
                 if (!isGranted) {
-                    Log.e("MLFL", "Camera permission denied!")
+                    Log.e(TAG, "Camera permission denied!")
                     return@requestPermission
                 }
                 resume()
             }
-            Log.i("MLFL", "Camera permission is not granted, trying to request...")
+            Log.i(TAG, "Camera permission is not granted, trying to request...")
             return
         }
 
-        cameraProvider ?: { Log.e("MLFL", "Attempt to bind camera while cameraProvider is not initialized") }
+        val cameraProvider = cameraProviderFuture.get()
+
+        cameraProvider ?: { Log.e(TAG, "Attempt to bind camera while cameraProvider is not initialized") }
 
         try {
             // Must unbind the use-cases before rebinding them
@@ -218,18 +214,17 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             // camera provides access to CameraControl & CameraInfo
             cameraProvider?.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, imageAnalysis)
         } catch (exc: Exception) {
-            Log.e("MLFL", "Use case binding failed DEFAULT_FRONT_CAMERA, trying default camera", exc)
+            Log.e(TAG, "Use case binding failed DEFAULT_FRONT_CAMERA, trying default camera", exc)
             cameraProvider?.bindToLifecycle(this, CameraSelector.Builder().build(), imageAnalysis)
         }
     }
 
     private fun unbindCamera()
     {
-        Log.i("MLFL", "Unbind camera")
+        Log.i(TAG, "Unbind camera")
+        val cameraProvider = cameraProviderFuture.get()
         cameraProvider?.unbindAll()
     }
-
-    var dumped : Boolean = false
 
     fun saveBitmapToInternalStorage(
         context: Context,
@@ -255,7 +250,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             fos = FileOutputStream(file)
             // Compress the bitmap and write it to the file.
             bitmap.compress(format, quality, fos)
-            Log.i("MLFL", "Pic saved to:\n ${file.absolutePath}")
+            Log.i(TAG, "Pic saved to:\n ${file.absolutePath}")
             return true
         } catch (e: IOException) {
             Log.e("saveBitmapToInternalStorage", "Error saving bitmap", e)
@@ -267,19 +262,6 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     }
 
     private fun detectFace(imageProxy: ImageProxy) {
-
-        if(!dumped)
-        {
-            dumped = true
-
-            saveBitmapToInternalStorage(_context, imageProxy.toBitmap(), "test.jpg")
-        }
-
-        if(_isDetecting)
-        {
-            Log.i("MLFL", "detectFace Already detecting")
-        }
-
         analyzedImage = imageProxy
         _isDetecting = true
 
@@ -287,13 +269,11 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     }
 
     fun resume() {
-        cameraProvider ?: return
-        _activity.runOnUiThread(::bindCamera)
+        cameraProviderFuture.addListener(::bindCamera, ContextCompat.getMainExecutor(_context))
     }
 
     fun pause() {
-        cameraProvider ?: return
-        _activity.runOnUiThread(::unbindCamera)
+        cameraProviderFuture.addListener(::unbindCamera, ContextCompat.getMainExecutor(_context))
     }
 
     fun dispose() {
@@ -301,10 +281,12 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             faceLandmarkerHelper?.clearFaceLandmarker()
             faceLandmarkerHelper = null
             unbindCamera()
-            cameraProvider = null
             imageAnalysis?.clearAnalyzer()
             imageAnalysis = null
             _isDetecting = false
+            landmarksBuffer = null
+            blendshapesBuffer = null
+            transformationMatricesBuffer = null
         }
     }
 
@@ -315,12 +297,13 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         address.isAccessible = true
 
         landmarksBuffer = ByteBuffer
-            .allocateDirect(maxFacesDetectedCount * landmarkArrayLength * landmarkFloatElementsSize * FLOAT_SIZE)
+            .allocateDirect(maxFacesDetectedCount * landmarkArrayLength * landmarkFloatElementsSize * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
 
-        blendshapesBuffer = ByteBuffer.allocateDirect(maxFacesDetectedCount * blendshapeArrayLength * FLOAT_SIZE)
+        blendshapesBuffer = ByteBuffer.allocateDirect(maxFacesDetectedCount * blendshapeArrayLength * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
-        transformationMatricesBuffer = ByteBuffer.allocateDirect(maxFacesDetectedCount * matrixArrayLength * FLOAT_SIZE)
+
+        transformationMatricesBuffer = ByteBuffer.allocateDirect(maxFacesDetectedCount * matrixArrayLength * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
 
         landmarksBufferAddress = address.getLong(landmarksBuffer)
@@ -353,38 +336,37 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
         if(outputLandmarks)
         {
-            var i = 0
-            landmarksBuffer.position(0)
+            val buffer = landmarksBuffer!!
             val faceLandmarks = resultBundle.result.faceLandmarks()
-
-            faceLandmarks.forEach() {landmarkList ->
+            buffer.position(0)
+            faceLandmarks.forEach { landmarkList ->
                 landmarkList.forEach { landmark ->
-                    landmarksBuffer.putFloat(landmark.x())
-                    landmarksBuffer.putFloat(landmark.y())
-                    landmarksBuffer.putFloat(landmark.z())
-                    landmarksBuffer.putFloat(landmark.presence().getOrDefault(0f))
-                    landmarksBuffer.putFloat(landmark.visibility().getOrDefault(0f))
+                    buffer.putFloat(landmark.x())
+                    buffer.putFloat(landmark.y())
+                    buffer.putFloat(landmark.z())
+                    buffer.putFloat(landmark.presence().getOrDefault(0f))
+                    buffer.putFloat(landmark.visibility().getOrDefault(0f))
                 }
             }
         }
 
         if (outputBlendshapes && resultBundle.result.faceBlendshapes().isPresent) {
-            blendshapesBuffer.position(0)
+            blendshapesBuffer!!.position(0)
             val faceBlendshapes = resultBundle.result.faceBlendshapes().get()
             faceBlendshapes.forEach{ blendshapeList ->
                 blendshapeList.forEach{ category ->
-                    blendshapesBuffer.putFloat(category.score())
+                    blendshapesBuffer!!.putFloat(category.score())
                 }
             }
         }
 
         if (outputTransformMatrices && resultBundle.result.facialTransformationMatrixes().isPresent) {
-            transformationMatricesBuffer.position(0)
+            transformationMatricesBuffer!!.position(0)
             val matrices = resultBundle.result.facialTransformationMatrixes().get()
 
             matrices.forEach { matrix ->
                 matrix.forEach {
-                    transformationMatricesBuffer.putFloat(it)
+                    transformationMatricesBuffer!!.putFloat(it)
                 }
             }
         }

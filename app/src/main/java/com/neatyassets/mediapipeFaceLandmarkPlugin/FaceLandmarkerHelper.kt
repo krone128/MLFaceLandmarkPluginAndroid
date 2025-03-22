@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+// Modified by krone128 03.03.2025
 package com.neatyassets.mediapipeFaceLandmarkPlugin
 
 import android.annotation.SuppressLint
@@ -126,7 +128,7 @@ class FaceLandmarkerHelper(
         imageProxy: ImageProxy
     ) {
         val frameTime = SystemClock.uptimeMillis()
-        val mpImage = MediaImageBuilder(imageProxy.image!!).build()
+        val mpImage = MediaImageBuilder(imageProxy.image).build()
         detectAsync(mpImage, frameTime)
     }
 
@@ -185,13 +187,6 @@ class FaceLandmarkerHelper(
 
     data class ResultBundle(
         val result: FaceLandmarkerResult,
-        val inferenceTime: Long,
-        val inputImageHeight: Int,
-        val inputImageWidth: Int,
-    )
-
-    data class VideoResultBundle(
-        val results: List<FaceLandmarkerResult>,
         val inferenceTime: Long,
         val inputImageHeight: Int,
         val inputImageWidth: Int,
