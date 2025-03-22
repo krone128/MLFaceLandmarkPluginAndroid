@@ -26,6 +26,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import com.github.florent37.application.provider.ActivityProvider
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerHelper
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException

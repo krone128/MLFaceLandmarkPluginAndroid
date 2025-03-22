@@ -47,30 +47,17 @@ repositories {
 }
 
 dependencies {
-    implementation("androidx.fragment:fragment-ktx:1.8.4")
-    implementation("androidx.core:core-ktx:1.13.1")
+    val cameraxVersion = "1.3.4"
+    val mediapipeTasksVersion = "0.10.21"
+
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("com.google.mediapipe:tasks-vision:$mediapipeTasksVersion")
+
+    compileOnly(fileTree("libs") { include("*.jar", "*.aar") })
+
     implementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-
-    // CameraX core library
-    val cameraxVersion = "1.3.4"
-    implementation("androidx.camera:camera-core:$cameraxVersion")
-
-    // CameraX Camera2 extensions
-    implementation("androidx.camera:camera-camera2:$cameraxVersion")
-
-    // CameraX Lifecycle library
-    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
-
-    // CameraX View class
-    implementation("androidx.camera:camera-view:$cameraxVersion")
-
-    // MediaPipe Library
-    implementation("com.google.mediapipe:tasks-vision:latest.release")
-
-    implementation("com.google.mediapipe:tasks-core:latest.release")
-
-    compileOnly(fileTree("libs") { include("*.jar", "*.aar") })
 }

@@ -29,6 +29,7 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
+import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerCustom
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 
 class FaceLandmarkerHelper(
@@ -46,7 +47,7 @@ class FaceLandmarkerHelper(
 
     // For this example this needs to be a var so it can be reset on changes.
     // If the Face Landmarker will not change, a lazy val would be preferable.
-    private var faceLandmarker: FaceLandmarker? = null
+    private var faceLandmarker: FaceLandmarkerCustom? = null
 
     init {
         setupFaceLandmarker()
@@ -100,7 +101,7 @@ class FaceLandmarkerHelper(
                     .build()
 
             faceLandmarker =
-                FaceLandmarker.createFromOptions(context, options)
+                FaceLandmarkerCustom.createFromOptions(context, options)
         } catch (e: IllegalStateException) {
             faceLandmarkerHelperListener?.onError(
                 "Face Landmarker failed to initialize." + e
@@ -155,12 +156,12 @@ class FaceLandmarkerHelper(
             ResultBundle(
                 result,
                 inferenceTime,
-                input.height,
-                input.width
+                192,
+                192
             )
         )
 
-        input.close()
+        //input.close()
     }
 
     // Return errors thrown during detection to this FaceLandmarkerHelper's
