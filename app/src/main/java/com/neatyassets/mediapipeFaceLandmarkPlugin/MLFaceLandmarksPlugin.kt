@@ -4,12 +4,15 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application.ActivityLifecycleCallbacks
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.hardware.camera2.CaptureRequest
 import android.os.Bundle
+import android.provider.MediaStore
 import android.util.Log
+import android.util.Range
 import android.util.Size
 import android.view.Surface
 import androidx.camera.camera2.interop.Camera2Interop
@@ -20,6 +23,13 @@ import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -41,12 +51,13 @@ import kotlin.jvm.optionals.getOrDefault
 private const val TAG = "MediaPipeFaceLandmarkPlugin"
 
 class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, LifecycleOwner, ActivityLifecycleCallbacks {
+
     private var landmarksBufferAddress: Long = 0
     private var blendshapesBufferAddress: Long = 0
     private var transformationMatricesBufferAddress: Long = 0
     private val landmarkFloatElementsSize = 5
-    private val faceDetectorInputShapeWidth = 480
-    private val faceDetectorInputShapeHeight = 640
+    private val faceDetectorInputShapeWidth = 192
+    private val faceDetectorInputShapeHeight = 192
 
     private val landmarkArrayLength = 478
     private val blendshapeArrayLength = 52
@@ -60,6 +71,8 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     private var managedBridge : ManagedBridge? = null
 
     private var imageAnalysis: ImageAnalysis? = null
+    private var videoRecorder: VideoCapture<Recorder>? = null
+    private var recording: Recording? = null
     //private var cameraProvider: ProcessCameraProvider? = null
     private var analyzedImage : ImageProxy? = null
 
@@ -68,6 +81,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
     private lateinit var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>
 
     private lateinit var backgroundExecutor: ExecutorService
+    private lateinit var recorderBackgroundExecutor: ExecutorService
     private lateinit var lifecycleRegistry: LifecycleRegistry
 
     private var _isDetecting: Boolean = false
@@ -95,6 +109,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         _context = _activity.applicationContext
         managedBridge = bridge
         backgroundExecutor = Executors.newSingleThreadExecutor()
+        recorderBackgroundExecutor = Executors.newCachedThreadPool()
         cameraProviderFuture = ProcessCameraProvider.getInstance(_context)
 
         _activity.runOnUiThread {
@@ -160,6 +175,17 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
         initAnalyzer()
     }
 
+    private fun initRecorder()
+    {
+        val targetRotation = Surface.ROTATION_90
+
+        val config = Recorder.Builder()
+            .setExecutor(recorderBackgroundExecutor)
+            .setQualitySelector(QualitySelector.from(Quality.LOWEST))
+
+        videoRecorder = VideoCapture.withOutput(config.build())
+    }
+
     @androidx.camera.camera2.interop.ExperimentalCamera2Interop
     private fun initAnalyzer()
     {
@@ -179,10 +205,14 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
 
         Camera2Interop.Extender(config)
-            .setCaptureRequestOption(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_VIDEO_SNAPSHOT)
+            .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(15,15))
+            .setCaptureRequestOption(CaptureRequest.STATISTICS_FACE_DETECT_MODE, CaptureRequest.STATISTICS_FACE_DETECT_MODE_OFF)
 
         imageAnalysis = config.build()
-            .also { it.setAnalyzer(backgroundExecutor, ::detectFace) }
+            .also { it.setAnalyzer(backgroundExecutor, ::detectFace)
+
+                Log.i(TAG, "Image analysis initialized: ${it.resolutionInfo?.resolution}")
+            }
     }
 
     private fun bindCamera()
@@ -263,6 +293,7 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
 
     private fun detectFace(imageProxy: ImageProxy) {
         analyzedImage = imageProxy
+        Log.i(TAG, "Image analysis imageProxy size: ${imageProxy.width}x${imageProxy.height}")
         _isDetecting = true
 
         faceLandmarkerHelper?.detectLiveStream(imageProxy)
@@ -288,6 +319,83 @@ class MLFaceLandmarksPlugin : FaceLandmarkerHelper.LandmarkerListener, Lifecycle
             blendshapesBuffer = null
             transformationMatricesBuffer = null
         }
+    }
+
+    fun startRecord()
+    {
+        // Create MediaStoreOutputOptions for our recorder
+        val name = "CameraX-recording"
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, name)
+        }
+        val mediaStoreOutput = MediaStoreOutputOptions.Builder(_activity.contentResolver,
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+            .setContentValues(contentValues)
+            .build()
+
+        recording?.close()
+
+        cameraProviderFuture.get()?.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, videoRecorder)
+
+        recording = videoRecorder?.output!!
+            .prepareRecording(_context, mediaStoreOutput)
+            .start(recorderBackgroundExecutor) { videoRecordEvent ->
+                if (videoRecordEvent is VideoRecordEvent.Start) {
+                        // Handle the start of a new active recording
+
+                } else if (videoRecordEvent is VideoRecordEvent.Pause) {
+                    // Handle the case where the active recording is paused
+
+                } else if (videoRecordEvent is VideoRecordEvent.Resume) {
+                    // Handles the case where the active recording is resumed
+
+                } else if (videoRecordEvent is VideoRecordEvent.Finalize) {
+                    val finalizeEvent = videoRecordEvent as VideoRecordEvent.Finalize
+                    // Handles a finalize event for the active recording, checking Finalize.getError()
+                    val error = finalizeEvent.error
+                    if (error != VideoRecordEvent.Finalize.ERROR_NONE) {
+                        Log.e(TAG, "Recorder error: $error")
+                        return@start
+                    }
+
+                    recording?.close()
+
+                    var resultBundle = faceLandmarkerHelper!!.detectVideoFile(
+                        videoRecordEvent.outputResults.outputUri,
+                        inferenceIntervalMs = 33)
+
+                    var file = File(_context.getExternalFilesDir(null), name + "_blendshapes.txt")
+
+                    val stringBuilder = StringBuilder()
+
+                    stringBuilder.appendLine("{")
+                    stringBuilder.appendLine("\t[")
+
+                    resultBundle?.results!!.forEach {
+                        stringBuilder.append("\t\t")
+                        stringBuilder.append("[")
+
+                        it.faceBlendshapes().get()[0].forEach {
+                            stringBuilder.append(it.score())
+                            stringBuilder.append(", ")
+                        }
+
+                        stringBuilder.removeSuffix(", ")
+
+                        stringBuilder.append("\t\t")
+                        stringBuilder.append("[")
+                    }
+
+                    stringBuilder.appendLine("\t]")
+                    stringBuilder.appendLine("}")
+
+                    file.writeText(stringBuilder.toString())
+                }
+            }
+    }
+
+    fun stopRecord() {
+        recording?.stop()
     }
 
     @SuppressLint("DiscouragedPrivateApi")

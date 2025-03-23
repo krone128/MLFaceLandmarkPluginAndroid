@@ -47,12 +47,14 @@ repositories {
 }
 
 dependencies {
+
     val cameraxVersion = "1.3.4"
     val mediapipeTasksVersion = "0.10.21"
 
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
     implementation("com.google.mediapipe:tasks-vision:$mediapipeTasksVersion")
 
     compileOnly(fileTree("libs") { include("*.jar", "*.aar") })
