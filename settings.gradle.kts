@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "MLFaceLandmarkPlugin"
-include(":app")
+include(":facetracking")

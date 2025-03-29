@@ -14,15 +14,18 @@
  * limitations under the License.
  */
 
-// Modified by krone128 03.03.2025
-package com.neatyassets.mediapipeFaceLandmarkPlugin
+// Modified by VisionSnap AS, 2025
+
+package com.visionsnap.facetracking
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.camera.core.ImageProxy
+import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.framework.image.MediaImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
@@ -40,6 +43,7 @@ class FaceLandmarkerHelper(
     val currentDelegate: Int = DELEGATE_CPU,
     val outputBlendshapes: Boolean,
     val outputTransformationMatrices: Boolean,
+    var maxDetectionFramerate: Int = 20,
     val context: Context,
     // this listener is only used when running in RunningMode.LIVE_STREAM
     val faceLandmarkerHelperListener: LandmarkerListener? = null,
@@ -130,6 +134,16 @@ class FaceLandmarkerHelper(
     ) {
         val frameTime = SystemClock.uptimeMillis()
         val mpImage = MediaImageBuilder(imageProxy.image).build()
+        detectAsync(mpImage, frameTime)
+    }
+
+    // Convert the ImageProxy to MP Image and feed it to FacelandmakerHelper.
+    @SuppressLint("UnsafeOptInUsageError")
+    fun detectLiveStream(
+        bitmap: Bitmap
+    ) {
+        val frameTime = SystemClock.uptimeMillis()
+        val mpImage = BitmapImageBuilder(bitmap).build()
         detectAsync(mpImage, frameTime)
     }
 

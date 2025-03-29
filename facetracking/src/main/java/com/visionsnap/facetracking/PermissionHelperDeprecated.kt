@@ -1,4 +1,4 @@
-package com.neatyassets.mediapipeFaceLandmarkPlugin
+package com.visionsnap.facetracking
 
 import android.app.Activity
 import android.content.pm.PackageManager

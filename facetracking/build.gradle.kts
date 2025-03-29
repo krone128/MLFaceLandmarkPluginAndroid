@@ -6,8 +6,8 @@ plugins {
 }
 
 android {
-    namespace = "com.neatyassets.mediapipeFaceLandmarkPlugin"
-    compileSdk = 35
+    namespace = "com.visionsnap.facetracking"
+    compileSdk = 33
 
     defaultConfig {
         minSdk = 29
@@ -47,10 +47,11 @@ repositories {
 }
 
 dependencies {
+    val appCompatVersion = "1.5.1"
     val cameraxVersion = "1.3.4"
     val mediapipeTasksVersion = "0.10.21"
 
-    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.appcompat:appcompat:$appCompatVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("com.google.mediapipe:tasks-vision:$mediapipeTasksVersion")
